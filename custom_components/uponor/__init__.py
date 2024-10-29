@@ -35,7 +35,7 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = [Platform.CLIMATE, Platform.SWITCH]
+PLATFORMS = [Platform.CLIMATE, Platform.SWITCH, Platform.NUMBER]
 
 async def async_setup(hass: HomeAssistant, config: dict):
     hass.data.setdefault(DOMAIN, {})
@@ -79,7 +79,7 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
 async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     _LOGGER.debug("Unloading setup entry: %s, data: %s, options: %s", config_entry.entry_id, config_entry.data, config_entry.options)
-    unload_ok = await hass.config_entries.async_unload_platforms(config_entry, [Platform.SWITCH, Platform.CLIMATE])
+    unload_ok = await hass.config_entries.async_unload_platforms(config_entry, [Platform.SWITCH, Platform.CLIMATE, Platform.SENSOR])
     return unload_ok
 
 class UponorStateProxy:
@@ -263,6 +263,30 @@ class UponorStateProxy:
             return self._data[var] == "1"
 
     # Away & Eco
+
+    def get_eco_offset_temperature(self):
+        var = 'sys_eco_mode_offset'
+        if var in self._data:
+            return round(int(self._data[var]) / 18,1)
+        
+    async def async_set_eco_offset_temperature(self, temp):        
+
+        var = 'sys_eco_mode_offset'
+        offset = int(temp * 18)
+
+        data = {var: offset}
+        for thermostat in self._hass.data[DOMAIN]['thermostats']:
+            var = thermostat + '_eco_offset'
+            data[var] = offset                   
+
+        await self._hass.async_add_executor_job(lambda: self._client.send_data(data))
+        
+        self._data[var] = offset
+        for thermostat in self._hass.data[DOMAIN]['thermostats']:            
+            var = thermostat + '_eco_offset'
+            self._data[var] = offset
+
+        self._hass.async_add_job(async_dispatcher_send, self._hass, SIGNAL_UPONOR_STATE_UPDATE)    
 
     def is_away(self):
         var = 'sys_forced_eco_mode'
